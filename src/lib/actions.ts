@@ -19,6 +19,8 @@ import {
   _updateOrderNotes,
   _updateStorefrontContent,
   _resetStorefrontContent,
+  _updateStoreConfig,
+  _resetStoreConfig,
   _createDiscountCode,
   _updateDiscountCode,
   _deleteDiscountCode,
@@ -36,6 +38,7 @@ import type {
   CartItem,
   Address,
   StorefrontContent,
+  StoreConfig,
   DiscountCode,
   AppliedDiscount,
 } from "./types";
@@ -241,6 +244,36 @@ export async function resetStorefrontContentAction(): Promise<{
   revalidatePath("/");
   revalidatePath("/admin/storefront");
   return { ok: true, content };
+}
+
+// ─── Store config actions ───────────────────────────────────────────
+
+export async function updateStoreConfigAction(
+  patch: Partial<StoreConfig>
+): Promise<
+  { ok: true; config: StoreConfig } | { ok: false; error: string }
+> {
+  try {
+    const config = await _updateStoreConfig(patch);
+    // Store config shows up in the header, footer, page titles —
+    // revalidate everything that could be affected.
+    revalidatePath("/", "layout");
+    return { ok: true, config };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Update failed",
+    };
+  }
+}
+
+export async function resetStoreConfigAction(): Promise<{
+  ok: true;
+  config: StoreConfig;
+}> {
+  const config = await _resetStoreConfig();
+  revalidatePath("/", "layout");
+  return { ok: true, config };
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────

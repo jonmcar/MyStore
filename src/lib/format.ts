@@ -1,16 +1,28 @@
-import { STORE } from "./config";
+/**
+ * Formatting helpers.
+ *
+ * Locale and currency are hardcoded here rather than read from the
+ * store config. Making currency per-store-configurable is a
+ * footgun: flipping from USD to EUR would relabel existing prices
+ * without converting them. Real multi-currency is a significant
+ * feature (storing prices per currency, handling conversion rates)
+ * that deserves its own design when the need arises.
+ */
+
+const LOCALE = "en-US";
+const CURRENCY = "USD";
 
 /** Format cents as a localized currency string, e.g. 2499 -> "$24.99" */
 export function formatMoney(cents: number): string {
-  return new Intl.NumberFormat(STORE.locale, {
+  return new Intl.NumberFormat(LOCALE, {
     style: "currency",
-    currency: STORE.currency,
+    currency: CURRENCY,
   }).format(cents / 100);
 }
 
 /** "Mar 14, 2026" */
 export function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat(STORE.locale, {
+  return new Intl.DateTimeFormat(LOCALE, {
     month: "short",
     day: "numeric",
     year: "numeric",

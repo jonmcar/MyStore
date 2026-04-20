@@ -306,3 +306,24 @@ model StorefrontContent {
   popup         Json?
   updatedAt     DateTime  @updatedAt
 }
+
+// ═════════════════════════════════════════════════════════════════════
+// STORE CONFIG
+// ═════════════════════════════════════════════════════════════════════
+
+/// Site-wide branding and commerce configuration. Singleton row
+/// (same pattern as StorefrontContent). All fields collapsed into
+/// one JSON column so adding new fields is a code change, not a
+/// schema migration.
+///
+/// Branding fields (name, tagline, description, supportEmail,
+/// copyrightText) are admin-editable via /admin/settings.
+///
+/// Commerce fields (taxRate, flatShippingCents, freeShippingOverCents)
+/// are scaffolding for demo purposes — real tax/shipping logic would
+/// replace them when Stripe Tax / carrier APIs are integrated.
+model StoreConfig {
+  id          String    @id @default("singleton") @db.VarChar(30)
+  data        Json
+  updatedAt   DateTime  @updatedAt
+}

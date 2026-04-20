@@ -1,14 +1,27 @@
 /**
  * Shared helpers for all seed scripts.
  *
- * Every seed in prisma/seeds/*.ts imports from here. The PrismaClient
- * singleton, the wipe-everything routine, date helpers, and slugify
- * live here once instead of being duplicated across each seed.
+ * Every seed in prisma/seeds/**.ts imports from here. The PrismaClient
+ * singleton, the wipe-everything routine, date helpers, default
+ * content, and the store-config writer live here.
  */
 
 import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient, Prisma } from "../../src/generated/prisma";
+import type { StoreConfig } from "../../src/lib/types";
+import { STOREFRONT_DEFAULTS } from "../../src/lib/default-storefront";
+import { STORE_CONFIG_DEFAULTS } from "../../src/lib/default-store-config";
+
+// Re-export the Prisma namespace so seeds can use it (for
+// Prisma.InputJsonValue, Prisma.JsonNull, etc.) without a second
+// import path.
+export { Prisma };
+
+// Re-export defaults so seeds can import both names from shared.
+export { STOREFRONT_DEFAULTS, STORE_CONFIG_DEFAULTS };
+/** Legacy alias — predates the rename of MOCK_STOREFRONT. */
+export const DEFAULT_STOREFRONT_DATA = STOREFRONT_DEFAULTS;
 
 // ─── Prisma client (same adapter setup the app uses) ──────────────
 
@@ -25,7 +38,6 @@ function makePrisma(): PrismaClient {
   return new PrismaClient({ adapter });
 }
 
-export { Prisma };
 export const prisma = makePrisma();
 
 // ─── Small helpers ─────────────────────────────────────────────────
@@ -69,17 +81,40 @@ export async function wipeAll() {
   await prisma.category.deleteMany();
   await prisma.discountCode.deleteMany();
   await prisma.storefrontContent.deleteMany();
+  await prisma.storeConfig.deleteMany();
 }
 
-// ─── Default storefront content ────────────────────────────────────
+// ─── Store config writer ───────────────────────────────────────────
 
-/** The baseline storefront content. Imported from the app's
- *  canonical defaults file so seeds and runtime code share one
- *  source of truth. Re-exported under the original name so existing
- *  seed imports keep working. */
-import { STOREFRONT_DEFAULTS } from "../../src/lib/default-storefront";
-export const DEFAULT_STOREFRONT_DATA = STOREFRONT_DEFAULTS;
-export { STOREFRONT_DEFAULTS };
+/**
+ * Convenience helper for seeds — writes the StoreConfig singleton
+ * row, merging the given overrides on top of STORE_CONFIG_DEFAULTS.
+ *
+ * Usage in a seed:
+ *
+ *   await writeStoreConfig();  // use defaults unchanged
+ *
+ *   await writeStoreConfig({
+ *     name: "ZoomMart",
+ *     tagline: "Everything fast, nothing fussy.",
+ *     supportEmail: "hi@zoommart.example",
+ *   });
+ *
+ * Missing fields fall through to defaults. Every seed should call
+ * this exactly once (after wipeAll) so the storefront has an
+ * identity to render.
+ */
+export async function writeStoreConfig(
+  overrides: Partial<StoreConfig> = {}
+): Promise<void> {
+  const config: StoreConfig = { ...STORE_CONFIG_DEFAULTS, ...overrides };
+  await prisma.storeConfig.create({
+    data: {
+      id: "singleton",
+      data: config as unknown as Prisma.InputJsonValue,
+    },
+  });
+}
 
 // ─── Seed runner wrapper ───────────────────────────────────────────
 
@@ -93,14 +128,15 @@ export async function runSeed(
   try {
     await fn();
     console.log(`\n✓ Seed complete (${name}).\n`);
-    console.log("  Categories :", await prisma.category.count());
-    console.log("  Listings   :", await prisma.listing.count());
-    console.log("  Options    :", await prisma.listingOption.count());
-    console.log("  Choices    :", await prisma.listingOptionChoice.count());
-    console.log("  Orders     :", await prisma.order.count());
-    console.log("  Order items:", await prisma.orderItem.count());
-    console.log("  Discounts  :", await prisma.discountCode.count());
-    console.log("  Storefront :", await prisma.storefrontContent.count());
+    console.log("  Categories  :", await prisma.category.count());
+    console.log("  Listings    :", await prisma.listing.count());
+    console.log("  Options     :", await prisma.listingOption.count());
+    console.log("  Choices     :", await prisma.listingOptionChoice.count());
+    console.log("  Orders      :", await prisma.order.count());
+    console.log("  Order items :", await prisma.orderItem.count());
+    console.log("  Discounts   :", await prisma.discountCode.count());
+    console.log("  Storefront  :", await prisma.storefrontContent.count());
+    console.log("  Store config:", await prisma.storeConfig.count());
   } catch (e) {
     console.error(`\n❌ Seed failed (${name}):\n`, e);
     process.exit(1);

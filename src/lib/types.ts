@@ -560,3 +560,32 @@ export interface StorefrontContent {
   popup: StorePopup;
   updatedAt: string;
 }
+
+// ═════════════════════════════════════════════════════════════════════
+// STORE CONFIG
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * Site-wide branding and commerce config. Singleton row in the DB.
+ *
+ * Branding fields are user-visible store identity — what shows in
+ * the header, footer, page titles, etc.
+ *
+ * Commerce fields drive the checkout math. These are scaffolding
+ * until real tax/shipping integrations exist; at that point they
+ * either become defaults that get overridden per-order, or they
+ * disappear entirely.
+ */
+export interface StoreConfig {
+  // Branding
+  name: string;
+  tagline: string;
+  description: string;
+  supportEmail: string;
+  copyrightText: string;
+
+  // Commerce (scaffolding)
+  taxRate: number;              // e.g. 0.0875 = 8.75%
+  flatShippingCents: number;    // e.g. 795 = $7.95
+  freeShippingOverCents: number; // e.g. 10000 = $100.00
+}

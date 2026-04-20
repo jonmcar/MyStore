@@ -1,20 +1,19 @@
 /**
- * Central store configuration.
- * Change values here to rename the store, tweak currency, etc.
+ * Legacy store config. DEPRECATED — use getStoreConfig() from data.ts
+ * for server components, or useStoreConfig() from the provider for
+ * client components.
+ *
+ * This file re-exports STORE_CONFIG_DEFAULTS under the legacy name
+ * STORE so callers that haven't been migrated yet keep working. New
+ * code should NOT import from this file.
+ *
+ * The STORE object here is FROZEN DEFAULTS — it does not reflect
+ * runtime config changes made via the admin UI. If you see stale
+ * values in the UI, it's because a caller is reading STORE.xxx
+ * instead of getStoreConfig().
+ *
+ * TODO: remove this file once every caller has been migrated.
  */
-export const STORE = {
-  name: "MyStore",
-  tagline: "Thoughtfully made goods and services for a considered life.",
-  description:
-    "MyStore is a small storefront featuring curated goods and hand-picked services.",
-  currency: "USD",
-  currencySymbol: "$",
-  locale: "en-US",
-  supportEmail: "hello@mystore.example",
-  // Tax rate for the fake checkout (e.g. 0.0875 = 8.75%)
-  taxRate: 0.0875,
-  // Flat shipping rate in cents; set to 0 for free shipping
-  flatShippingCents: 795,
-  // Cart items under this count get free shipping thresholds, etc.
-  freeShippingOverCents: 10000,
-} as const;
+import { STORE_CONFIG_DEFAULTS } from "./default-store-config";
+
+export const STORE = STORE_CONFIG_DEFAULTS;

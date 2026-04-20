@@ -29,6 +29,7 @@ import type {
   Order,
   OrderStatus,
   StorefrontContent,
+  StoreConfig,
   DiscountCode,
   AppliedDiscount,
   ListingOption,
@@ -40,6 +41,7 @@ import type {
   Section,
 } from "./types";
 import { STOREFRONT_DEFAULTS } from "./default-storefront";
+import { STORE_CONFIG_DEFAULTS } from "./default-store-config";
 
 /**
  * A flattened patch for updating a listing.
@@ -636,6 +638,61 @@ export async function _resetStorefrontContent(): Promise<StorefrontContent> {
     ...STOREFRONT_DEFAULTS,
     updatedAt: new Date().toISOString(),
   };
+}
+
+// ─── Store config ───────────────────────────────────────────────────
+
+/**
+ * Read the singleton store config from the DB.
+ *
+ * Falls back to STORE_CONFIG_DEFAULTS if no row exists yet (fresh
+ * install, never seeded). Also merges individual missing fields on
+ * top of defaults so that a stored config missing a new field (e.g.
+ * field added after the row was last saved) still returns a fully
+ * populated object.
+ */
+export async function getStoreConfig(): Promise<StoreConfig> {
+  const row = await db.storeConfig.findUnique({
+    where: { id: "singleton" },
+  });
+  if (!row) return { ...STORE_CONFIG_DEFAULTS };
+  const stored = row.data as unknown as Partial<StoreConfig>;
+  return { ...STORE_CONFIG_DEFAULTS, ...stored };
+}
+
+/** Upsert the singleton store config with a partial patch. Missing
+ *  fields in the patch are preserved from the current value. */
+export async function _updateStoreConfig(
+  patch: Partial<StoreConfig>
+): Promise<StoreConfig> {
+  const current = await getStoreConfig();
+  const merged: StoreConfig = { ...current, ...patch };
+  await db.storeConfig.upsert({
+    where: { id: "singleton" },
+    create: {
+      id: "singleton",
+      data: merged as unknown as Prisma.InputJsonValue,
+    },
+    update: {
+      data: merged as unknown as Prisma.InputJsonValue,
+    },
+  });
+  return merged;
+}
+
+/** Reset the singleton store config to STORE_CONFIG_DEFAULTS. */
+export async function _resetStoreConfig(): Promise<StoreConfig> {
+  await db.storeConfig.upsert({
+    where: { id: "singleton" },
+    create: {
+      id: "singleton",
+      data: STORE_CONFIG_DEFAULTS as unknown as Prisma.InputJsonValue,
+    },
+    update: {
+      data: STORE_CONFIG_DEFAULTS as unknown as Prisma.InputJsonValue,
+    },
+  });
+  return { ...STORE_CONFIG_DEFAULTS };
 }
 
 // ─── Discount codes ─────────────────────────────────────────────────

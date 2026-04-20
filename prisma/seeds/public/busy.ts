@@ -25,6 +25,7 @@ import {
   pick,
   randInt,
   wipeAll,
+  writeStoreConfig,
   STOREFRONT_DEFAULTS,
   runSeed,
   Prisma,
@@ -139,6 +140,12 @@ const SERVICE_TEMPLATES = [
 async function main() {
   console.log("  Clearing existing data…");
   await wipeAll();
+  // Seeds one StoreConfig row. Same mechanic as `prisma.X.create()`
+  // used for other tables — just wrapped in a helper because there's
+  // always exactly one row (singleton) and most seeds only want to
+  // override a few fields. `writeStoreConfig()` with no args uses
+  // STORE_CONFIG_DEFAULTS unchanged; pass an object to override.
+  await writeStoreConfig();
 
   // ─── Categories ──────────────────────────────────────────────────
   console.log("  Creating categories…");
