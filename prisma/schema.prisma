@@ -1,0 +1,308 @@
+// ─────────────────────────────────────────────────────────────────────
+// MyStore Storefront — Prisma schema
+// ─────────────────────────────────────────────────────────────────────
+//
+// Conventions used in this schema:
+//
+//   IDs:
+//     All primary keys are CUIDs — URL-safe, collision-resistant strings
+//     generated client-side by Prisma. Stored as VARCHAR(30) in MySQL.
+//
+//   Money:
+//     Always integer cents. Never floats. `Int` column type.
+//
+//   Timestamps:
+//     Every table has `createdAt` and (where mutable) `updatedAt`.
+//     Prisma's @default(now()) and @updatedAt decorators keep them in sync
+//     automatically — you never set them from app code.
+//
+//   Strings storing enum-like values (type, status, kind, etc.):
+//     Stored as VARCHAR. Validated at the app layer via TypeScript unions.
+//     Preferred over Prisma enums because adding a new value doesn't require
+//     a migration.
+//
+//   Long text:
+//     Anywhere text might exceed 255 characters (descriptions, notes),
+//     explicitly typed `@db.Text` so MySQL uses TEXT not VARCHAR.
+//
+//   Snapshot fields on orders:
+//     Fields like `priceCentsAtAdd`, `nameAtAdd`, `appliedDiscount`,
+//     `shippingAddress` are frozen at order placement. Deliberately
+//     NOT foreign keys — orders must remain immutable even if the
+//     underlying listing/discount/etc. is edited or deleted later.
+//
+//   JSON columns:
+//     Used where the data is document-shaped (sections array, option
+//     config, tag/image arrays, address snapshots). Queryable via
+//     MySQL JSON functions when needed, though we rarely need to.
+//
+// ─────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// CATEGORIES
+// ═════════════════════════════════════════════════════════════════════
+
+/// A canonical category (e.g. "Ceramics", "Stationery"). Listings reference
+/// categories by FK rather than by string to avoid drift and typos.
+/// `description` and `imageUrl` are forward-compatible fields for when the
+/// home page's Categories section gets richer (per-category tiles, etc.).
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique           @db.VarChar(120)
+  slug        String    @unique           @db.VarChar(120)
+  description String?                     @db.Text
+  imageUrl    String?                     @db.VarChar(500)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  listings    Listing[]
+
+  @@index([slug])
+  @@index([sortOrder])
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// LISTINGS
+// ═════════════════════════════════════════════════════════════════════
+
+/// A single item on the storefront — product OR service (discriminated on
+/// the `type` column). Product-only and service-only fields coexist on this
+/// one table as nullable columns; the app layer enforces which subset must
+/// be populated based on `type`.
+model Listing {
+  id              String    @id @default(cuid())
+  slug            String    @unique           @db.VarChar(200)
+  type            String                      @db.VarChar(20)    // "product" | "service"
+  name            String                      @db.VarChar(255)
+  tagline         String                      @db.VarChar(500)
+  description     String                      @db.Text
+
+  priceCents      Int
+  compareAtCents  Int?
+
+  images          Json                                            // string[] — ordered URLs
+  tags            Json                                            // string[] — free-form
+
+  categoryId      String
+  category        Category  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  featured        Boolean   @default(false)
+  inStock         Boolean   @default(true)
+  /// Admin override. Null means "defer to stock / options". Explicit values
+  /// ("sold-out" or "unavailable") force the listing into that state.
+  availability    String?                     @db.VarChar(20)
+  processingTime  String?                     @db.VarChar(200)
+  isPublished     Boolean   @default(false)
+
+  // ─── Product-only fields ────────────────────────────────────
+  sku             String?                     @db.VarChar(80)
+  weightGrams     Int?
+  stockCount      Int?
+
+  // ─── Service-only fields ────────────────────────────────────
+  /// Nullable — services with variable duration (set by a shopper option)
+  /// leave this empty.
+  durationMinutes Int?
+  locationType    String?                     @db.VarChar(20)    // "in-person" | "remote" | "either"
+  locationLabel   String?                     @db.VarChar(200)
+
+  // ─── Metadata ───────────────────────────────────────────────
+  createdAt       DateTime  @default(now())
+  publishedAt     DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  options         ListingOption[]
+
+  @@index([slug])
+  @@index([categoryId])
+  @@index([isPublished, featured])
+  @@index([type])
+  @@index([createdAt])
+}
+
+/// Customization option shown on the product page (size, color, engraving,
+/// etc.). The `config` JSON column holds type-specific settings (e.g.
+/// display="radio" for selects, min/max/step for numbers, accept/maxSizeMB
+/// for files). Choices for select/multi-select types live on the
+/// ListingOptionChoice table.
+model ListingOption {
+  id          String    @id @default(cuid())
+  listingId   String
+  listing     Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  /// "select" | "multi-select" | "text" | "textarea" | "number" | "file" | "datetime"
+  type        String                        @db.VarChar(20)
+  name        String                        @db.VarChar(120)
+  required    Boolean   @default(false)
+  helpText    String?                       @db.VarChar(500)
+  sortOrder   Int       @default(0)
+  config      Json?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  choices     ListingOptionChoice[]
+
+  @@index([listingId, sortOrder])
+}
+
+/// A single choice within a select or multi-select option.
+/// For text/textarea/number/file/datetime options, this table has no rows.
+model ListingOptionChoice {
+  id                  String        @id @default(cuid())
+  optionId            String
+  option              ListingOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  label               String                  @db.VarChar(255)
+  /// Optional price delta in cents. Positive adds, negative subtracts.
+  priceModifierCents  Int?
+  /// Optional per-choice stock count. Null = unlimited. Zero = sold out.
+  stockCount          Int?
+  sortOrder           Int           @default(0)
+
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([optionId, sortOrder])
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// ORDERS
+// ═════════════════════════════════════════════════════════════════════
+
+/// A placed order. Totals are stored directly rather than recomputed, so
+/// the historical record stays stable even if tax rates or shipping rules
+/// change. `appliedDiscount` and `shippingAddress` are JSON snapshots.
+model Order {
+  id                String      @id @default(cuid())
+
+  email             String                   @db.VarChar(320)    // max RFC-compliant email length
+
+  /// "placed" | "ready-for-pickup" | "shipped" | "refunded"
+  status            String      @default("placed") @db.VarChar(30)
+  statusUpdatedAt   DateTime    @default(now())
+
+  subtotalCents     Int
+  discountCents     Int         @default(0)
+  /// Snapshot of the applied discount code at order time. Shape:
+  ///   { code, description, kind, amount, discountCents }
+  /// Null when no discount was used.
+  appliedDiscount   Json?
+  taxCents          Int
+  shippingCents     Int
+  totalCents        Int
+
+  /// Snapshot of the address at order time. Shape:
+  ///   { name, line1, line2?, city, region, postalCode, country }
+  /// Null for service-only orders that don't need shipping.
+  shippingAddress   Json?
+
+  /// Admin-only operational notes (visible in /admin/orders, not to shopper)
+  notes             String?                  @db.Text
+  /// Shopper-submitted "special instructions" captured at checkout
+  customerNotes     String?                  @db.Text
+
+  placedAt          DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  items             OrderItem[]
+
+  @@index([email])
+  @@index([status, placedAt])
+  @@index([placedAt])
+}
+
+/// Individual line on an order — fully snapshotted from the listing at
+/// purchase time. Deliberately NOT joined to Listing via FK so orders
+/// remain immutable even if the listing is edited or deleted.
+model OrderItem {
+  id                  String    @id @default(cuid())
+  orderId             String
+  order               Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// The listing this line came from. No FK relation — see module header.
+  /// Kept as a string so admin can optionally link back to the listing if
+  /// it still exists.
+  listingId           String                  @db.VarChar(30)
+  listingSlug         String                  @db.VarChar(200)
+  listingType         String                  @db.VarChar(20)    // "product" | "service"
+
+  // ─── Snapshot fields captured at add-to-cart / order time ──
+  nameAtAdd           String                  @db.VarChar(255)
+  imageAtAdd          String?                 @db.VarChar(500)
+  /// Per-unit price including any option price modifiers applied.
+  priceCentsAtAdd     Int
+  quantity            Int
+
+  /// Snapshot of the customization picks: [{ optionName, value }]
+  /// Stored as JSON because option snapshots must be immutable and are
+  /// always read/written as a whole.
+  selectedOptions     Json?
+
+  createdAt           DateTime  @default(now())
+
+  @@index([orderId])
+  @@index([listingId])
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// DISCOUNT CODES
+// ═════════════════════════════════════════════════════════════════════
+
+/// Promotional codes shoppers can enter at checkout. Active-but-expired
+/// and active-but-used-up codes stay in the table — the app filters them
+/// out at redemption time via `findValidDiscountCode`.
+model DiscountCode {
+  id                String    @id @default(cuid())
+  code              String    @unique                 @db.VarChar(50)
+  description       String                            @db.VarChar(500)
+
+  kind              String                            @db.VarChar(10)     // "percent" | "fixed"
+  /// For kind="percent": integer percentage (0-100).
+  /// For kind="fixed": integer cents.
+  amount            Int
+
+  minSubtotalCents  Int?
+  expiresAt         DateTime?
+  usageLimit        Int?
+  timesUsed         Int       @default(0)
+  active            Boolean   @default(true)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([code])
+  @@index([active, expiresAt])
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// STOREFRONT CONTENT
+// ═════════════════════════════════════════════════════════════════════
+
+/// Singleton table holding the entire page builder content as JSON.
+/// Exactly one row ever, identified by the literal id "singleton".
+///
+/// The `sections` JSON field holds the ordered Section[] from the page
+/// builder — every hero, featured, editorial, promo, text block, image
+/// banner, etc. The `announcement` field holds the site-wide banner config.
+///
+/// Stored as JSON because the sections array is document-shaped: always
+/// read/written as a whole, never queried into, with varied per-type
+/// shapes. See the architecture notes on this decision.
+model StorefrontContent {
+  id            String    @id @default("singleton") @db.VarChar(30)
+  sections      Json
+  announcement  Json
+  popup         Json?
+  updatedAt     DateTime  @updatedAt
+}
